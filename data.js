@@ -6,7 +6,7 @@ const PHAR=ASWAN.pharmacies.map(r=>({...norm('pharmacy',r),medicines:(r.availabl
 const CLIN=ASWAN.clinics.map(r=>({...norm('clinic',r),doctor:r.doctorName,specialty:r.specialty,booking:[r.bookingPhone].filter(ok_),services:r.services||[]}));
 const DB={
 users:[
-{id:1,type:'customer',email:'customer@quickaid.com',password:'123456',name:'Mona Hassan',phone:'01000000001',follows:[]},
+{id:1,type:'customer',email:'customer@quickaid.com',password:'123456',name:'Reem Ashraf',phone:'01000000001',follows:[]},
 {id:2,type:'pharmacy',email:'pharmacy@quickaid.com',password:'123456',name:'Nile Pharmacy',entityId:'p1'},
 {id:3,type:'hospital',email:'hospital@quickaid.com',password:'123456',name:'Aswan University Hospital',entityId:'h1'},
 {id:4,type:'clinic',email:'clinic@quickaid.com',password:'123456',name:'Aswan Eyes & Laser Center',entityId:'c1'}],
