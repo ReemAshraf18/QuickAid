@@ -13,3 +13,5 @@ body{background:#f4f8fb}
 .bot-panel{position:fixed;right:1rem;bottom:5rem;width:min(340px,92vw);max-height:70vh;overflow:auto;z-index:1040}
 :focus-visible{outline:3px solid #ffbf00;outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.qa-logo{height:38px;width:auto;max-width:100%;display:block}
+@media (max-width:575.98px){.qa-logo{height:32px}}
