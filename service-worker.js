@@ -6,7 +6,7 @@ const CACHE_VERSION = 'quickaid-v1';
 const LOCAL_ASSETS = [
   './', 'index.html', 'style.css', 'app.js', 'data.js', 'aswan-data.js', 'pwa.js',
   'logo.png', 'manifest.json', 'offline.html',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'
+  'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'
 ];
 // Pinned CDN files used by index.html.
 const ICONS_CSS = 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css';
