@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "QuickAid",
+  "short_name": "QuickAid",
+  "description": "Find hospitals, pharmacies and private clinics in Aswan, Egypt, and learn first aid - available offline.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0b3954",
+  "background_color": "#f4f8fb",
+  "lang": "en",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
