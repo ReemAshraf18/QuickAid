@@ -4,7 +4,7 @@
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () {
       try {
-        navigator.serviceWorker.register("/service-worker.js", { scope: "/" }).catch(function (e) {
+        navigator.serviceWorker.register("service-worker.js", { scope: "/" }).catch(function (e) {
           console.warn("Service worker registration failed:", e);
         });
       } catch (e) { console.warn("Service worker unavailable:", e); }
