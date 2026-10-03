@@ -1,80 +1,585 @@
-'use strict';
-const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let me=null,view='home',param=null,tab='',res=null,chat=null,modalSave=null;
-const CAT={hospital:['Hospital','hospitals','Hospitals'],pharmacy:['Pharmacy','pharmacies','Pharmacies'],clinic:['Private Clinic','clinics','Private Clinics']};
-const all=()=>[...DB.hospitals,...DB.pharmacies,...DB.clinics],find=id=>all().find(e=>e.id===id),mine=()=>find(me.entityId);
-const avg=e=>e.reviews.length?(e.reviews.reduce((a,r)=>a+r.stars,0)/e.reviews.length).toFixed(1):'–';
-const stars=e=>e.reviews.length?`<span class="text-warning" aria-label="Rating ${avg(e)} of 5">${'★'.repeat(Math.round(avg(e)))}</span> <small>${avg(e)} (${e.reviews.length} demo reviews)</small>`:'<small class="text-muted">Rating: Not available</small>';
-const log=a=>DB.logs.unshift({t:new Date().toLocaleString(),user:me?me.email:'guest',action:a});
-const toast=(m,t='success')=>{const el=document.createElement('div');el.className=`toast show pe-auto align-items-center text-bg-${t} border-0`;el.setAttribute('role','alert');el.innerHTML=`<div class="d-flex"><div class="toast-body">${esc(m)}</div><button class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>`;$('#toasts').append(el);setTimeout(()=>el.remove(),3500)};
-const go=(v,p)=>{view=v;param=p;render();scrollTo(0,0)};
-const ok=m=>{log(m);toast(m);render()};
-const inp=(k,l,t='text',v='',o=0,x='')=>`<div class="mb-2"><label class="form-label" for="f_${k}">${l}</label>${t==='lines'?`<textarea class="form-control" id="f_${k}" name="${k}" rows="3">${esc(v)}</textarea>`:t==='avail'?`<select class="form-select" id="f_${k}" name="${k}"><option value="yes" ${v==='yes'?'selected':''}>In stock</option><option value="no" ${v==='no'?'selected':''}>Out of stock</option></select>`:`<input class="form-control" id="f_${k}" name="${k}" type="${t==='list'?'text':t}" value="${esc(v)}" ${t==='number'?'min="0" step="any"':''} ${o?'':'required'} ${x}><div class="invalid-feedback">Enter a valid value.</div>`}</div>`;
-const fields=(defs,v={})=>defs.map(([k,l,t,o])=>inp(k,l,t,t==='list'?(v[k]||[]).join(', '):t==='lines'?(v[k]||[]).join('\n'):v[k]??'',o)).join('');
-const parse=(t,v)=>t==='list'?v.split(',').map(s=>s.trim()).filter(Boolean):t==='lines'?v.split('\n').map(s=>s.trim()).filter(Boolean):t==='number'?+v:v;
-const nav=()=>`<nav class="navbar navbar-expand-lg bg-white shadow-sm sticky-top"><div class="container"><a class="navbar-brand fw-bold text-danger" href="#" data-go="home"><i class="bi bi-heart-pulse-fill"></i> QuickAid</a><button class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#nv" aria-controls="nv" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button><div class="collapse navbar-collapse" id="nv"><ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">${[['home','Home'],['aid','First Aid'],['list:hospital','Hospitals'],['list:pharmacy','Pharmacies'],['list:clinic','Clinics'],['search','Search']].map(([g,l])=>`<li class="nav-item"><a class="nav-link" href="#" data-go="${g}">${l}</a></li>`).join('')}${me?`<li class="nav-item"><a class="nav-link" href="#" data-go="dash">Dashboard</a></li><li class="nav-item"><button class="btn btn-outline-danger btn-sm" data-act="logout">Logout</button></li>`:`<li class="nav-item"><a class="btn btn-danger btn-sm" href="#" data-go="login">Login / Register</a></li>`}</ul></div></div></nav>`;
-const card=e=>`<div class="col-md-6 col-lg-4"><div class="card h-100 qa-card"><img src="${e.img}" class="card-img-top" alt="${esc(e.name)} (demo image)"><div class="card-body"><span class="badge bg-primary">${CAT[e.cat][0]}</span><h3 class="h5 mt-2">${esc(e.name)}</h3><p class="mb-1"><i class="bi bi-geo-alt"></i> ${esc(e.area)}</p><p class="mb-0">${stars(e)}</p></div><div class="card-footer bg-white d-flex flex-wrap gap-1"><button class="btn btn-sm btn-primary" data-act="details" data-id="${e.id}">View Details</button><button class="btn btn-sm btn-outline-primary" data-act="follow" data-id="${e.id}">${me?.follows?.includes(e.id)?'Unfollow':'Follow'}</button><button class="btn btn-sm btn-outline-success" data-act="msg" data-id="${e.id}">Message</button></div></div></div>`;
-const search=(q,f)=>{q=q.toLowerCase().trim();return all().filter(e=>(f==='all'||e.cat===f)&&(!q||JSON.stringify([e.name,e.area,e.specialty,e.specialties,e.services,(e.medicines||[]).map(m=>m.name)]).toLowerCase().includes(q)))};
-const vHome=()=>{const l=res?res.list:all().slice(0,6);return `<section class="hero text-white py-5"><div class="container text-center"><h1 class="display-5 fw-bold">Fast help when it matters</h1><p class="lead">Find hospitals, pharmacies and private clinics in Aswan, Egypt, and learn first aid.</p><form data-form="search" class="row g-2 justify-content-center bg-white p-3 rounded-3 shadow" novalidate><div class="col-md-3"><label class="visually-hidden" for="f">Category</label><select class="form-select form-select-lg" id="f" name="f">${[['all','All'],['hospital','Hospitals'],['pharmacy','Pharmacies'],['clinic','Private Clinics']].map(([v,t])=>`<option value="${v}" ${res?.f===v?'selected':''}>${t}</option>`).join('')}</select></div><div class="col-md-7"><label class="visually-hidden" for="q">Search</label><input class="form-control form-control-lg" id="q" name="q" placeholder="Name, area, specialty, medicine..." value="${esc(res?.q)}"></div><div class="col-md-2"><button class="btn btn-danger btn-lg w-100"><i class="bi bi-search"></i> Search</button></div></form><p class="mt-3 mb-0"><i class="bi bi-telephone-fill"></i> Egypt emergency: Ambulance <b>123</b> · Police <b>122</b> · Fire <b>180</b></p></div></section><div class="container py-4"><h2 class="h4" id="results">${res?l.length+' result(s)':'Featured in Aswan'}</h2><div class="row g-3">${l.map(card).join('')||'<p>No results. Try another keyword or filter.</p>'}</div><h2 class="h4 mt-5">Emergency statistics</h2><p class="text-muted small">No verified Aswan-specific statistics were found, so these bars are an illustrative demo index only (not real or Aswan data). For real data see the WHO fact sheets.</p><div class="row g-3">${DB.stats.map(s=>`<div class="col-6 col-md-4"><div class="card card-body"><i class="bi ${s.i} fs-3 text-danger"></i><b>${s.n}</b><div class="progress" role="progressbar" aria-label="${s.n} demo index" aria-valuenow="${s.v}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar bg-danger" style="width:${s.v}%">${s.v}</div></div></div></div>`).join('')}</div></div>`};
-const vAid=()=>{const c=AID[param];return `<div class="container py-4"><h1>First Aid</h1><label for="aid" class="form-label">Choose a condition</label><select id="aid" class="form-select mb-3" data-change="aid"><option value="">Select...</option>${AID.map((x,i)=>`<option value="${i}" ${param===String(i)?'selected':''}>${x.n}</option>`).join('')}</select>${c?`<div class="row g-3"><div class="col-lg-6"><div class="card border-success h-100"><div class="card-header bg-success text-white">First-aid steps: ${c.n}</div><ol class="list-group list-group-numbered list-group-flush">${c.s.map(x=>`<li class="list-group-item">${x}</li>`).join('')}</ol></div></div><div class="col-lg-3"><div class="card border-danger h-100"><div class="card-header bg-danger text-white">What not to do</div><ul class="list-group list-group-flush">${c.d.map(x=>`<li class="list-group-item">${x}</li>`).join('')}</ul></div></div><div class="col-lg-3"><div class="card border-warning h-100"><div class="card-header bg-warning">Seek emergency help (123)</div><ul class="list-group list-group-flush">${c.e.map(x=>`<li class="list-group-item">${x}</li>`).join('')}</ul></div></div></div>`:''}<p class="small text-muted mt-3">General guidance in line with common public sources such as WHO and Red Cross. This content is <b>not WHO-verified</b> and does not replace professional care.</p></div>`};
-const vList=()=>`<div class="container py-4"><h1>${CAT[param][2]} <small class="fs-6 text-muted">(Aswan, demo/project data)</small></h1><div class="row g-3">${DB[CAT[param][1]].map(card).join('')}</div></div>`;
-const vDetail=()=>{const e=find(param),c=e.cat,L=a=>a?.length?a.map(x=>`<li>${esc(x)}</li>`).join(''):'<li>Not available</li>';
-const top=`<p><i class="bi bi-geo-alt"></i> ${esc(e.area)}</p><p><i class="bi bi-telephone"></i> Phone: ${e.phones.map(esc).join(', ')||'Not available'}${c==='clinic'?' · Booking: '+(e.booking.map(esc).join(', ')||'Not available'):''}</p><p><i class="bi bi-clock"></i> ${esc(e.hours)}</p><p>${stars(e)}</p><div class="d-flex gap-2 mb-3"><button class="btn btn-outline-primary" data-act="follow" data-id="${e.id}">${me?.follows?.includes(e.id)?'Unfollow':'Follow'}</button><button class="btn btn-outline-success" data-act="msg" data-id="${e.id}">Message</button></div>`;
-const x=c==='hospital'?`<div class="row g-2 mb-3">${e.images.map((s,i)=>`<div class="col-4"><img class="img-fluid rounded" src="${s}" alt="${esc(e.name)} image ${i+1} (demo)"></div>`).join('')}</div>${top}<p class="text-danger fw-bold"><i class="bi bi-hospital"></i> Emergency line: ${esc(e.emergency)} (national ambulance: 123)</p><h2 class="h5">Specialties</h2><p>${e.specialties.map(s=>`<span class="badge bg-info text-dark me-1">${esc(s)}</span>`).join('')||'Not available'}</p><h2 class="h5">Services</h2><ul>${L(e.services)}</ul>`:c==='pharmacy'?`${top}<h2 class="h5">Available medicines</h2><div class="table-responsive"><table class="table"><thead><tr><th>Medicine</th><th>Price (EGP)</th><th>Status</th></tr></thead><tbody>${e.medicines.map(m=>`<tr><td>${esc(m.name)}</td><td>${m.price}</td><td><span class="badge bg-${m.avail?'success':'secondary'}">${m.avail?'Available':'Out of stock'}</span></td></tr>`).join('')||'<tr><td colspan="3">No medicines listed.</td></tr>'}</tbody></table></div><h2 class="h5">Offers</h2><ul>${e.offers.map(o=>`<li><b>${esc(o.title)}</b> – ${esc(o.discount)} (until ${esc(o.until)})</li>`).join('')||'<li>No offers.</li>'}</ul>`:`<div class="d-flex gap-3 mb-3"><img class="rounded" width="140" height="140" style="object-fit:cover" src="${e.img}" alt="Photo of ${esc(e.doctor)} (demo)"><div><h2 class="h4">${esc(e.doctor)}</h2><p class="text-muted">${esc(e.specialty)}</p></div></div>${top}<h2 class="h5">Services</h2><ul>${L(e.services)}</ul>`;
-return `<div class="container py-4"><button class="btn btn-link ps-0" data-go="list:${c}">← Back to ${CAT[c][1]}</button><h1>${esc(e.name)} <span class="badge bg-primary fs-6">${CAT[c][0]}</span></h1><p class="small text-muted">Demo/project data for Aswan. Last verified: ${esc(e.lastVerified)}. Sources: ${(e.source||[]).map(u=>/^https?:/.test(u)?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.split("/")[2])}</a>`:esc(u)).join(", ")||NA}. Details may be incomplete or outdated; verify before relying on them.</p>${e.description&&e.description!==NA?`<p>${esc(e.description)}</p>`:""}<div class="row g-4"><div class="col-lg-7">${x}${e.announcements.length?`<div class="alert alert-info"><b>Announcements</b><ul class="mb-0">${L(e.announcements)}</ul></div>`:''}</div><div class="col-lg-5"><iframe title="Map location of ${esc(e.name)}" class="w-100 rounded border" height="260" loading="lazy" src="https://www.google.com/maps?q=${encodeURIComponent(e.mapQuery)}&output=embed"></iframe><div class="mt-2"><a class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.mapQuery)}"><i class="bi bi-geo-alt-fill"></i> Open in Google Maps</a><div class="small text-muted mt-1">Opens a Google Maps search for this name/address. The place is not verified on Google Maps.</div></div><h2 class="h5 mt-3">Reviews</h2>${e.reviews.map(r=>`<div class="border-bottom py-2"><b>${esc(r.user)}</b> <span class="text-warning">${'★'.repeat(r.stars)}</span><br>${esc(r.text)}</div>`).join('')}${me?.type==='customer'?`<form class="mt-3" data-form="review" novalidate><label class="form-label" for="st">Your rating</label><select class="form-select mb-2" id="st" name="stars">${[5,4,3,2,1].map(n=>`<option>${n}</option>`).join('')}</select>${inp('text','Review','text','',0,'maxlength="200"')}<button class="btn btn-primary">Submit review</button></form>`:'<p class="small text-muted mt-2">Log in as a customer to add a review.</p>'}</div></div></div>`};
-const vLogin=()=>`<div class="container py-5" style="max-width:480px"><h1 class="h3">Login</h1><form data-form="login" novalidate>${inp('email','Email','email')}${inp('password','Password','password','',0,'minlength="6"')}<button class="btn btn-danger w-100">Login</button></form><p class="mt-3">No account? <a href="#" data-go="register">Register</a></p><div class="alert alert-secondary small">Demo accounts (password 123456): customer@, pharmacy@, hospital@, clinic@ + quickaid.com. Prototype only: passwords are plain text in demo data.</div></div>`;
-const vReg=()=>`<div class="container py-5" style="max-width:480px"><h1 class="h3">Register</h1><form data-form="register" novalidate><label class="form-label" for="f_type">Account type</label><select class="form-select mb-2" id="f_type" name="type"><option value="customer">Customer</option><option value="pharmacy">Pharmacy</option><option value="hospital">Hospital</option><option value="clinic">Private Clinic</option></select>${inp('name','Name')}${inp('email','Email','email')}${inp('password','Password (min 6)','password','',0,'minlength="6"')}${inp('conf','Confirm password','password','',0,'minlength="6"')}<button class="btn btn-danger w-100">Create account</button></form><p class="mt-3">Have an account? <a href="#" data-go="login">Login</a></p></div>`;
-const BASE=[['area','Address / location'],['phones','Phone numbers (comma separated)','list',1],['hours','Working hours'],['mapQuery','Google Maps search text']];
-const DEFS={hospital:[['name','Hospital name'],...BASE,['emergency','Emergency number'],['specialties','Specialties (comma separated)','list'],['services','Services (comma separated)','list'],['images','Image URLs (comma separated, optional)','list',1],['announcements','Announcements (one per line)','lines',1]],pharmacy:[['name','Pharmacy name'],...BASE],clinic:[['name','Clinic name'],['doctor','Doctor name'],['specialty','Specialty'],['img','Doctor photo URL (optional)','text',1],...BASE,['services','Services (comma separated)','list'],['announcements','Announcements (one per line)','lines',1]]};
-const MD=[['name','Medicine'],['price','Price (EGP)','number'],['avail','Availability','avail']],OD=[['title','Offer title'],['discount','Discount'],['until','Valid until']];
-const threads=()=>me.type==='customer'?[...new Set(DB.messages.filter(m=>m.cid===me.id).map(m=>m.eid))].map(id=>[id,find(id).name]):[...new Set(DB.messages.filter(m=>m.eid===me.entityId).map(m=>m.cid))].map(id=>[id,DB.users.find(u=>u.id===id).name]);
-const rows=(items,cols,kind)=>`<div class="table-responsive"><table class="table"><tbody>${items.map(i=>`<tr>${cols(i)}<td class="text-end"><button class="btn btn-sm btn-outline-primary" data-act="edit${kind}" data-id="${i.id}">Edit</button> <button class="btn btn-sm btn-outline-danger" data-act="del${kind}" data-id="${i.id}">Delete</button></td></tr>`).join('')||'<tr><td>Nothing yet.</td></tr>'}</tbody></table></div><button class="btn btn-success" data-act="add${kind}">Add</button>`;
-const PANES={
-profile:()=>`<form data-form="profile" novalidate>${inp('name','Name','text',me.name)}${inp('phone','Phone','tel',me.phone||'',1)}${inp('email','Email (read only)','email',me.email,0,'readonly')}<button class="btn btn-primary">Save profile</button></form>`,
-pass:()=>`<form data-form="pass" novalidate style="max-width:400px">${inp('cur','Current password','password','',0,'minlength="6"')}${inp('new','New password','password','',0,'minlength="6"')}${inp('conf','Confirm new password','password','',0,'minlength="6"')}<button class="btn btn-primary">Change password</button></form>`,
-hist:()=>{const h=DB.history.filter(x=>x.uid===me.id);return `<ul class="list-group mb-3">${h.map(x=>`<li class="list-group-item">${esc(x.q)} <span class="badge bg-secondary">${x.f}</span> <small class="text-muted">${x.t}</small></li>`).join('')||'<li class="list-group-item">No searches yet.</li>'}</ul><button class="btn btn-outline-danger" data-act="clearHist">Clear search history</button>`},
-fol:()=>`<div class="row g-3">${me.follows.map(find).map(card).join('')||'<p>You are not following anyone yet.</p>'}</div>`,
-msgs:()=>`<div class="list-group">${threads().map(([id,n])=>`<button class="list-group-item list-group-item-action" data-act="thread" data-id="${id}"><i class="bi bi-chat"></i> ${esc(n)}</button>`).join('')||'<p>No conversations yet.</p>'}</div>`,
-info:()=>`<form data-form="entity" novalidate>${fields(DEFS[me.type],mine())}<button class="btn btn-primary">Save information</button></form>`,
-meds:()=>rows(mine().medicines,m=>`<td>${esc(m.name)}</td><td>${m.price} EGP</td><td>${m.avail?'Available':'Out of stock'}</td>`,'Med'),
-offers:()=>rows(mine().offers,o=>`<td>${esc(o.title)}</td><td>${esc(o.discount)}</td><td>${esc(o.until)}</td>`,'Offer'),
-act:()=>`<ul class="list-group">${DB.logs.filter(l=>l.user===me.email).map(l=>`<li class="list-group-item">${l.t} – ${esc(l.action)}</li>`).join('')||'<li class="list-group-item">No activity yet.</li>'}</ul>`};
-const vDash=()=>{if(!me)return vLogin();const tabs=me.type==='customer'?[['profile','Profile'],['pass','Password'],['hist','Search history'],['fol','Following'],['msgs','Messages']]:[['info','Information'],...(me.type==='pharmacy'?[['meds','Medicines'],['offers','Offers']]:[]),['msgs','Inbox'],['pass','Password'],['act','Activity log']];if(!tabs.some(t=>t[0]===tab))tab=tabs[0][0];return `<div class="container py-4"><h1 class="h3">Welcome, ${esc(me.name)} <span class="badge bg-secondary">${me.type}</span></h1><ul class="nav nav-pills my-3 flex-wrap gap-1">${tabs.map(([k,l])=>`<li class="nav-item"><button class="nav-link ${k===tab?'active':''}" data-act="tab" data-id="${k}">${l}</button></li>`).join('')}</ul><div class="card card-body">${PANES[tab]()}</div></div>`};
-function render(){$('#nav').innerHTML=nav();$('#app').innerHTML={home:vHome,aid:vAid,list:vList,detail:vDetail,login:vLogin,register:vReg,dash:vDash}[view]()}
-function openForm(title,defs,vals,save){modalSave=save;$('#mTitle').textContent=title;$('#mBody').innerHTML=`<form data-form="modal" novalidate>${fields(defs,vals)}<button class="btn btn-primary">Save</button></form>`;bootstrap.Modal.getOrCreateInstance('#modal').show()}
-const closeM=()=>bootstrap.Modal.getInstance('#modal')?.hide();
-function openChat(eid,cid){chat={eid,cid};$('#mTitle').textContent='Chat: '+(me.type==='customer'?find(eid).name:DB.users.find(u=>u.id===cid).name);drawChat();bootstrap.Modal.getOrCreateInstance('#modal').show()}
-function drawChat(){const side=me.type==='customer'?'c':'b',ms=DB.messages.filter(m=>m.eid===chat.eid&&m.cid===chat.cid);$('#mBody').innerHTML=`<div class="chat" id="chatbox" aria-live="polite">${ms.map(m=>`<div class="bubble ${m.from===side?'me':'them'}">${esc(m.text)}<small>${m.t}</small></div>`).join('')||'<p class="text-muted">Start the conversation with a quick question or an order.</p>'}</div><form data-form="send" class="input-group mt-2" novalidate><input class="form-control" name="text" aria-label="Message" required maxlength="300" placeholder="Type a message"><button class="btn btn-primary"><i class="bi bi-send"></i> Send</button></form>`;const b=$('#chatbox');b.scrollTop=b.scrollHeight;$('#mBody input[name=text]').focus()}
-const mkEnt=(type,name)=>{const e={id:type[0]+Date.now(),cat:type,name,area:'Aswan, Egypt',phones:[],hours:'Not available',mapQuery:name+' Aswan Egypt',source:['User-registered demo account'],lastVerified:'Not available',reviews:[],announcements:[],img:ph(name,'#0d6efd'),...(type==='hospital'?{images:[ph(name,'#0d6efd')],specialties:[],services:[],emergency:'123'}:type==='pharmacy'?{medicines:[],offers:[]}:{doctor:name,specialty:'General',services:[]})};DB[CAT[type][1]].push(e);return e};
-const login=u=>{me=u;tab='';log('Logged in');toast('Welcome, '+u.name);go('dash')};
-const A={
-details:id=>go('detail',id),
-follow:(id)=>{if(me?.type!=='customer'){toast('Log in as a customer to follow.','warning');return me?0:go('login')}const i=me.follows.indexOf(id);i<0?me.follows.push(id):me.follows.splice(i,1);ok((i<0?'Followed ':'Unfollowed ')+find(id).name)},
-msg:id=>{if(!me){toast('Please log in first.','warning');return go('login')}if(me.type!=='customer')return toast('Only customers can start chats.','warning');openChat(id,me.id)},
-logout:()=>{log('Logged out');me=null;toast('Logged out');go('home')},
-tab:id=>{tab=id;render()},
-clearHist:()=>{DB.history=DB.history.filter(x=>x.uid!==me.id);ok('Search history cleared')},
-thread:id=>me.type==='customer'?openChat(id,me.id):openChat(me.entityId,+id),
-addMed:()=>openForm('Add medicine',MD,{avail:'yes'},d=>{mine().medicines.push({id:'m'+Date.now(),name:d.name,price:+d.price,avail:d.avail==='yes'});ok('Medicine added')}),
-editMed:id=>{const m=mine().medicines.find(x=>x.id===id);openForm('Edit medicine',MD,{...m,avail:m.avail?'yes':'no'},d=>{Object.assign(m,{name:d.name,price:+d.price,avail:d.avail==='yes'});ok('Medicine updated')})},
-delMed:id=>{if(confirm('Delete this medicine?')){mine().medicines=mine().medicines.filter(x=>x.id!==id);ok('Medicine deleted')}},
-addOffer:()=>openForm('Add offer',OD,{},d=>{mine().offers.push({id:'o'+Date.now(),...d});ok('Offer added')}),
-editOffer:id=>{const o=mine().offers.find(x=>x.id===id);openForm('Edit offer',OD,o,d=>{Object.assign(o,d);ok('Offer updated')})},
-delOffer:id=>{if(confirm('Delete this offer?')){mine().offers=mine().offers.filter(x=>x.id!==id);ok('Offer deleted')}},
-botToggle:()=>$('#botPanel').classList.toggle('d-none'),
-bot:i=>{$('#botLog').innerHTML=`<p class="mb-0"><b>${BOT[i][0]}</b><br>${BOT[i][1]}</p>`}};
-const F={
-search:d=>{res={q:d.q,f:d.f,list:search(d.q,d.f)};if(me?.type==='customer')DB.history.unshift({uid:me.id,q:d.q||'(all)',f:d.f,t:new Date().toLocaleString()});log('Searched: '+d.q);render();$('#results').scrollIntoView()},
-login:d=>{const u=DB.users.find(x=>x.email===d.email.toLowerCase()&&x.password===d.password);u?login(u):toast('Wrong email or password.','danger')},
-register:d=>{if(d.password!==d.conf)return toast('Passwords do not match.','danger');if(DB.users.some(x=>x.email===d.email.toLowerCase()))return toast('Email already registered.','danger');const u={id:Date.now(),type:d.type,email:d.email.toLowerCase(),password:d.password,name:d.name,...(d.type==='customer'?{phone:'',follows:[]}:{entityId:mkEnt(d.type,d.name).id})};DB.users.push(u);login(u)},
-profile:d=>{me.name=d.name;me.phone=d.phone;ok('Profile saved')},
-pass:(d,f)=>{if(d.cur!==me.password)return toast('Current password is wrong.','danger');if(d.new!==d.conf)return toast('New passwords do not match.','danger');me.password=d.new;f.reset();ok('Password changed')},
-entity:d=>{const e=mine(),o={};DEFS[me.type].forEach(([k,,t,opt])=>{const v=parse(t,d[k]);if(!(opt&&(k==='images'||k==='img')&&(v===''||(Array.isArray(v)&&!v.length))))o[k]=v});Object.assign(e,o);me.name=e.name;ok('Information saved')},
-review:d=>{const e=find(param);e.reviews.push({user:me.name,stars:+d.stars,text:d.text});ok('Review added')},
-send:(d,f)=>{DB.messages.push({cid:chat.cid,eid:chat.eid,from:me.type==='customer'?'c':'b',text:d.text,t:new Date().toLocaleTimeString()});log('Sent message');drawChat()},
-modal:d=>{modalSave(d);closeM()}};
-document.addEventListener('click',e=>{const g=e.target.closest('[data-go]');if(g){e.preventDefault();const[v,p]=g.dataset.go.split(':');if(v==='search'){go('home');setTimeout(()=>$('#q').focus(),50)}else go(v,p);return}const a=e.target.closest('[data-act]');if(a)A[a.dataset.act]?.(a.dataset.id,a)});
-document.addEventListener('submit',e=>{const f=e.target.closest('form[data-form]');if(!f)return;e.preventDefault();if(!f.checkValidity()){f.classList.add('was-validated');return}F[f.dataset.form](Object.fromEntries(new FormData(f)),f)});
-document.addEventListener('change',e=>{if(e.target.dataset.change==='aid'){param=e.target.value;render();$('#aid').focus()}});
-$('#botBody').innerHTML=`<p class="small">Pick a question:</p><div class="d-grid gap-1 mb-2">${BOT.map((b,i)=>`<button class="btn btn-sm btn-outline-danger text-start" data-act="bot" data-id="${i}">${b[0]}</button>`).join('')}</div><div id="botLog" aria-live="polite"></div>`;
+"use strict";
+const $ = (s) => document.querySelector(s),
+  esc = (s) =>
+    String(s ?? "").replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c],
+    );
+let me = null,
+  view = "home",
+  param = null,
+  tab = "",
+  res = null,
+  chat = null,
+  modalSave = null;
+const CAT = {
+  hospital: ["Hospital", "hospitals", "Hospitals"],
+  pharmacy: ["Pharmacy", "pharmacies", "Pharmacies"],
+  clinic: ["Private Clinic", "clinics", "Private Clinics"],
+};
+const all = () => [...DB.hospitals, ...DB.pharmacies, ...DB.clinics],
+  find = (id) => all().find((e) => e.id === id),
+  mine = () => find(me.entityId);
+const avg = (e) =>
+  e.reviews.length
+    ? (e.reviews.reduce((a, r) => a + r.stars, 0) / e.reviews.length).toFixed(1)
+    : "–";
+const stars = (e) =>
+  e.reviews.length
+    ? `<span class="text-warning" aria-label="Rating ${avg(e)} of 5">${"★".repeat(Math.round(avg(e)))}</span> <small>${avg(e)} (${e.reviews.length} demo reviews)</small>`
+    : '<small class="text-muted">Rating: Not available</small>';
+const log = (a) =>
+  DB.logs.unshift({
+    t: new Date().toLocaleString(),
+    user: me ? me.email : "guest",
+    action: a,
+  });
+const toast = (m, t = "success") => {
+  const el = document.createElement("div");
+  el.className = `toast show pe-auto align-items-center text-bg-${t} border-0`;
+  el.setAttribute("role", "alert");
+  el.innerHTML = `<div class="d-flex"><div class="toast-body">${esc(m)}</div><button class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>`;
+  $("#toasts").append(el);
+  setTimeout(() => el.remove(), 3500);
+};
+const go = (v, p) => {
+  view = v;
+  param = p;
+  render();
+  scrollTo(0, 0);
+};
+const ok = (m) => {
+  log(m);
+  toast(m);
+  render();
+};
+const inp = (k, l, t = "text", v = "", o = 0, x = "") =>
+  `<div class="mb-2"><label class="form-label" for="f_${k}">${l}</label>${t === "lines" ? `<textarea class="form-control" id="f_${k}" name="${k}" rows="3">${esc(v)}</textarea>` : t === "avail" ? `<select class="form-select" id="f_${k}" name="${k}"><option value="yes" ${v === "yes" ? "selected" : ""}>In stock</option><option value="no" ${v === "no" ? "selected" : ""}>Out of stock</option></select>` : `<input class="form-control" id="f_${k}" name="${k}" type="${t === "list" ? "text" : t}" value="${esc(v)}" ${t === "number" ? 'min="0" step="any"' : ""} ${o ? "" : "required"} ${x}><div class="invalid-feedback">Enter a valid value.</div>`}</div>`;
+const fields = (defs, v = {}) =>
+  defs
+    .map(([k, l, t, o]) =>
+      inp(
+        k,
+        l,
+        t,
+        t === "list"
+          ? (v[k] || []).join(", ")
+          : t === "lines"
+            ? (v[k] || []).join("\n")
+            : (v[k] ?? ""),
+        o,
+      ),
+    )
+    .join("");
+const parse = (t, v) =>
+  t === "list"
+    ? v
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : t === "lines"
+      ? v
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : t === "number"
+        ? +v
+        : v;
+const nav = () =>
+  `<nav class="navbar navbar-expand-lg bg-white shadow-sm sticky-top"><div class="container"><a class="navbar-brand" href="#" data-go="home" aria-label="QuickAid home"><img src="logo.png" alt="QuickAid" class="qa-logo"></a><button class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#nv" aria-controls="nv" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button><div class="collapse navbar-collapse" id="nv"><ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">${[
+    ["home", "Home"],
+    ["aid", "First Aid"],
+    ["list:hospital", "Hospitals"],
+    ["list:pharmacy", "Pharmacies"],
+    ["list:clinic", "Clinics"],
+    ["search", "Search"],
+  ]
+    .map(
+      ([g, l]) =>
+        `<li class="nav-item"><a class="nav-link" href="#" data-go="${g}">${l}</a></li>`,
+    )
+    .join(
+      "",
+    )}${me ? `<li class="nav-item"><a class="nav-link" href="#" data-go="dash">Dashboard</a></li><li class="nav-item"><button class="btn btn-outline-danger btn-sm" data-act="logout">Logout</button></li>` : `<li class="nav-item"><a class="btn btn-danger btn-sm" href="#" data-go="login">Login / Register</a></li>`}</ul></div></div></nav>`;
+const card = (e) =>
+  `<div class="col-md-6 col-lg-4"><div class="card h-100 qa-card"><img src="${e.img}" class="card-img-top" alt="${esc(e.name)} (demo image)"><div class="card-body"><span class="badge bg-primary">${CAT[e.cat][0]}</span><h3 class="h5 mt-2">${esc(e.name)}</h3><p class="mb-1"><i class="bi bi-geo-alt"></i> ${esc(e.area)}</p><p class="mb-0">${stars(e)}</p></div><div class="card-footer bg-white d-flex flex-wrap gap-1"><button class="btn btn-sm btn-primary" data-act="details" data-id="${e.id}">View Details</button><button class="btn btn-sm btn-outline-primary" data-act="follow" data-id="${e.id}">${me?.follows?.includes(e.id) ? "Unfollow" : "Follow"}</button><button class="btn btn-sm btn-outline-success" data-act="msg" data-id="${e.id}">Message</button></div></div></div>`;
+const search = (q, f) => {
+  q = q.toLowerCase().trim();
+  return all().filter(
+    (e) =>
+      (f === "all" || e.cat === f) &&
+      (!q ||
+        JSON.stringify([
+          e.name,
+          e.area,
+          e.specialty,
+          e.specialties,
+          e.services,
+          (e.medicines || []).map((m) => m.name),
+        ])
+          .toLowerCase()
+          .includes(q)),
+  );
+};
+const vHome = () => {
+  const l = res ? res.list : all().slice(0, 6);
+  return `<section class="hero text-white py-5"><div class="container text-center"><h1 class="display-5 fw-bold">Fast help when it matters</h1><p class="lead">Find hospitals, pharmacies and private clinics in Aswan, Egypt, and learn first aid.</p><form data-form="search" class="row g-2 justify-content-center bg-white p-3 rounded-3 shadow" novalidate><div class="col-md-3"><label class="visually-hidden" for="f">Category</label><select class="form-select form-select-lg" id="f" name="f">${[
+    ["all", "All"],
+    ["hospital", "Hospitals"],
+    ["pharmacy", "Pharmacies"],
+    ["clinic", "Private Clinics"],
+  ]
+    .map(
+      ([v, t]) =>
+        `<option value="${v}" ${res?.f === v ? "selected" : ""}>${t}</option>`,
+    )
+    .join(
+      "",
+    )}</select></div><div class="col-md-7"><label class="visually-hidden" for="q">Search</label><input class="form-control form-control-lg" id="q" name="q" placeholder="Name, area, specialty, medicine..." value="${esc(res?.q)}"></div><div class="col-md-2"><button class="btn btn-danger btn-lg w-100"><i class="bi bi-search"></i> Search</button></div></form><p class="mt-3 mb-0"><i class="bi bi-telephone-fill"></i> Egypt emergency: Ambulance <b>123</b> · Police <b>122</b> · Fire <b>180</b></p></div></section><div class="container py-4"><div class="alert alert-warning" role="alert"><b>Frontend prototype with demo/project data.</b> Aswan listings come from public directory pages (see each record’s sources and last-verified date); they may be incomplete or outdated, and missing values show “Not available”. Changes are kept in memory (reset on reload). Real authentication and a database require a backend.</div><h2 class="h4" id="results">${res ? l.length + " result(s)" : "Featured in Aswan (demo/project data)"}</h2><div class="row g-3">${l.map(card).join("") || "<p>No results. Try another keyword or filter.</p>"}</div><h2 class="h4 mt-5">Emergency statistics</h2><p class="text-muted small">No verified Aswan-specific statistics were found, so these bars are an illustrative demo index only (not real or Aswan data). For real data see the WHO fact sheets.</p><div class="row g-3">${DB.stats.map((s) => `<div class="col-6 col-md-4"><div class="card card-body"><i class="bi ${s.i} fs-3 text-danger"></i><b>${s.n}</b><div class="progress" role="progressbar" aria-label="${s.n} demo index" aria-valuenow="${s.v}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar bg-danger" style="width:${s.v}%">${s.v}</div></div></div></div>`).join("")}</div></div>`;
+};
+const vAid = () => {
+  const c = AID[param];
+  return `<div class="container py-4"><h1>First Aid</h1><label for="aid" class="form-label">Choose a condition</label><select id="aid" class="form-select mb-3" data-change="aid"><option value="">Select...</option>${AID.map((x, i) => `<option value="${i}" ${param === String(i) ? "selected" : ""}>${x.n}</option>`).join("")}</select>${c ? `<div class="row g-3"><div class="col-lg-6"><div class="card border-success h-100"><div class="card-header bg-success text-white">First-aid steps: ${c.n}</div><ol class="list-group list-group-numbered list-group-flush">${c.s.map((x) => `<li class="list-group-item">${x}</li>`).join("")}</ol></div></div><div class="col-lg-3"><div class="card border-danger h-100"><div class="card-header bg-danger text-white">What not to do</div><ul class="list-group list-group-flush">${c.d.map((x) => `<li class="list-group-item">${x}</li>`).join("")}</ul></div></div><div class="col-lg-3"><div class="card border-warning h-100"><div class="card-header bg-warning">Seek emergency help (123)</div><ul class="list-group list-group-flush">${c.e.map((x) => `<li class="list-group-item">${x}</li>`).join("")}</ul></div></div></div>` : ""}<p class="small text-muted mt-3">General guidance in line with common public sources such as WHO and Red Cross. This content is <b>not WHO-verified</b> and does not replace professional care.</p></div>`;
+};
+const vList = () =>
+  `<div class="container py-4"><h1>${CAT[param][2]} <small class="fs-6 text-muted">(Aswan, demo/project data)</small></h1><div class="row g-3">${DB[CAT[param][1]].map(card).join("")}</div></div>`;
+const vDetail = () => {
+  const e = find(param),
+    c = e.cat,
+    L = (a) =>
+      a?.length
+        ? a.map((x) => `<li>${esc(x)}</li>`).join("")
+        : "<li>Not available</li>";
+  const top = `<p><i class="bi bi-geo-alt"></i> ${esc(e.area)}</p><p><i class="bi bi-telephone"></i> Phone: ${e.phones.map(esc).join(", ") || "Not available"}${c === "clinic" ? " · Booking: " + (e.booking.map(esc).join(", ") || "Not available") : ""}</p><p><i class="bi bi-clock"></i> ${esc(e.hours)}</p><p>${stars(e)}</p><div class="d-flex gap-2 mb-3"><button class="btn btn-outline-primary" data-act="follow" data-id="${e.id}">${me?.follows?.includes(e.id) ? "Unfollow" : "Follow"}</button><button class="btn btn-outline-success" data-act="msg" data-id="${e.id}">Message</button></div>`;
+  const x =
+    c === "hospital"
+      ? `<div class="row g-2 mb-3">${e.images.map((s, i) => `<div class="col-4"><img class="img-fluid rounded" src="${s}" alt="${esc(e.name)} image ${i + 1} (demo)"></div>`).join("")}</div>${top}<p class="text-danger fw-bold"><i class="bi bi-hospital"></i> Emergency line: ${esc(e.emergency)} (national ambulance: 123)</p><h2 class="h5">Specialties</h2><p>${e.specialties.map((s) => `<span class="badge bg-info text-dark me-1">${esc(s)}</span>`).join("") || "Not available"}</p><h2 class="h5">Services</h2><ul>${L(e.services)}</ul>`
+      : c === "pharmacy"
+        ? `${top}<h2 class="h5">Available medicines</h2><div class="table-responsive"><table class="table"><thead><tr><th>Medicine</th><th>Price (EGP)</th><th>Status</th></tr></thead><tbody>${e.medicines.map((m) => `<tr><td>${esc(m.name)}</td><td>${m.price}</td><td><span class="badge bg-${m.avail ? "success" : "secondary"}">${m.avail ? "Available" : "Out of stock"}</span></td></tr>`).join("") || '<tr><td colspan="3">No medicines listed.</td></tr>'}</tbody></table></div><h2 class="h5">Offers</h2><ul>${e.offers.map((o) => `<li><b>${esc(o.title)}</b> – ${esc(o.discount)} (until ${esc(o.until)})</li>`).join("") || "<li>No offers.</li>"}</ul>`
+        : `<div class="d-flex gap-3 mb-3"><img class="rounded" width="140" height="140" style="object-fit:cover" src="${e.img}" alt="Photo of ${esc(e.doctor)} (demo)"><div><h2 class="h4">${esc(e.doctor)}</h2><p class="text-muted">${esc(e.specialty)}</p></div></div>${top}<h2 class="h5">Services</h2><ul>${L(e.services)}</ul>`;
+  return `<div class="container py-4"><button class="btn btn-link ps-0" data-go="list:${c}">← Back to ${CAT[c][1]}</button><h1>${esc(e.name)} <span class="badge bg-primary fs-6">${CAT[c][0]}</span></h1><p class="small text-muted">Demo/project data for Aswan. Last verified: ${esc(e.lastVerified)}. Sources: ${(e.source || []).map((u) => (/^https?:/.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.split("/")[2])}</a>` : esc(u))).join(", ") || NA}. Details may be incomplete or outdated; verify before relying on them.</p>${e.description && e.description !== NA ? `<p>${esc(e.description)}</p>` : ""}<div class="row g-4"><div class="col-lg-7">${x}${e.announcements.length ? `<div class="alert alert-info"><b>Announcements</b><ul class="mb-0">${L(e.announcements)}</ul></div>` : ""}</div><div class="col-lg-5"><iframe title="Map location of ${esc(e.name)}" class="w-100 rounded border" height="260" loading="lazy" src="https://www.google.com/maps?q=${encodeURIComponent(e.mapQuery)}&output=embed"></iframe><div class="mt-2"><a class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.mapQuery)}"><i class="bi bi-geo-alt-fill"></i> Open in Google Maps</a><div class="small text-muted mt-1">Opens a Google Maps search for this name/address. The place is not verified on Google Maps.</div></div><h2 class="h5 mt-3">Reviews</h2>${e.reviews.map((r) => `<div class="border-bottom py-2"><b>${esc(r.user)}</b> <span class="text-warning">${"★".repeat(r.stars)}</span><br>${esc(r.text)}</div>`).join("")}${me?.type === "customer" ? `<form class="mt-3" data-form="review" novalidate><label class="form-label" for="st">Your rating</label><select class="form-select mb-2" id="st" name="stars">${[5, 4, 3, 2, 1].map((n) => `<option>${n}</option>`).join("")}</select>${inp("text", "Review", "text", "", 0, 'maxlength="200"')}<button class="btn btn-primary">Submit review</button></form>` : '<p class="small text-muted mt-2">Log in as a customer to add a review.</p>'}</div></div></div>`;
+};
+const vLogin = () =>
+  `<div class="container py-5" style="max-width:480px"><h1 class="h3">Login</h1><form data-form="login" novalidate>${inp("email", "Email", "email")}${inp("password", "Password", "password", "", 0, 'minlength="6"')}<button class="btn btn-danger w-100">Login</button></form><p class="mt-3">No account? <a href="#" data-go="register">Register</a></p><div class="alert alert-secondary small">Demo accounts (password 123456): customer@, pharmacy@, hospital@, clinic@ + quickaid.com. Prototype only: passwords are plain text in demo data.</div></div>`;
+const vReg = () =>
+  `<div class="container py-5" style="max-width:480px"><h1 class="h3">Register</h1><form data-form="register" novalidate><label class="form-label" for="f_type">Account type</label><select class="form-select mb-2" id="f_type" name="type"><option value="customer">Customer</option><option value="pharmacy">Pharmacy</option><option value="hospital">Hospital</option><option value="clinic">Private Clinic</option></select>${inp("name", "Name")}${inp("email", "Email", "email")}${inp("password", "Password (min 6)", "password", "", 0, 'minlength="6"')}${inp("conf", "Confirm password", "password", "", 0, 'minlength="6"')}<button class="btn btn-danger w-100">Create account</button></form><p class="mt-3">Have an account? <a href="#" data-go="login">Login</a></p></div>`;
+const BASE = [
+  ["area", "Address / location"],
+  ["phones", "Phone numbers (comma separated)", "list", 1],
+  ["hours", "Working hours"],
+  ["mapQuery", "Google Maps search text"],
+];
+const DEFS = {
+  hospital: [
+    ["name", "Hospital name"],
+    ...BASE,
+    ["emergency", "Emergency number"],
+    ["specialties", "Specialties (comma separated)", "list"],
+    ["services", "Services (comma separated)", "list"],
+    ["images", "Image URLs (comma separated, optional)", "list", 1],
+    ["announcements", "Announcements (one per line)", "lines", 1],
+  ],
+  pharmacy: [["name", "Pharmacy name"], ...BASE],
+  clinic: [
+    ["name", "Clinic name"],
+    ["doctor", "Doctor name"],
+    ["specialty", "Specialty"],
+    ["img", "Doctor photo URL (optional)", "text", 1],
+    ...BASE,
+    ["services", "Services (comma separated)", "list"],
+    ["announcements", "Announcements (one per line)", "lines", 1],
+  ],
+};
+const MD = [
+    ["name", "Medicine"],
+    ["price", "Price (EGP)", "number"],
+    ["avail", "Availability", "avail"],
+  ],
+  OD = [
+    ["title", "Offer title"],
+    ["discount", "Discount"],
+    ["until", "Valid until"],
+  ];
+const threads = () =>
+  me.type === "customer"
+    ? [
+        ...new Set(
+          DB.messages.filter((m) => m.cid === me.id).map((m) => m.eid),
+        ),
+      ].map((id) => [id, find(id).name])
+    : [
+        ...new Set(
+          DB.messages.filter((m) => m.eid === me.entityId).map((m) => m.cid),
+        ),
+      ].map((id) => [id, DB.users.find((u) => u.id === id).name]);
+const rows = (items, cols, kind) =>
+  `<div class="table-responsive"><table class="table"><tbody>${items.map((i) => `<tr>${cols(i)}<td class="text-end"><button class="btn btn-sm btn-outline-primary" data-act="edit${kind}" data-id="${i.id}">Edit</button> <button class="btn btn-sm btn-outline-danger" data-act="del${kind}" data-id="${i.id}">Delete</button></td></tr>`).join("") || "<tr><td>Nothing yet.</td></tr>"}</tbody></table></div><button class="btn btn-success" data-act="add${kind}">Add</button>`;
+const PANES = {
+  profile: () =>
+    `<form data-form="profile" novalidate>${inp("name", "Name", "text", me.name)}${inp("phone", "Phone", "tel", me.phone || "", 1)}${inp("email", "Email (read only)", "email", me.email, 0, "readonly")}<button class="btn btn-primary">Save profile</button></form>`,
+  pass: () =>
+    `<form data-form="pass" novalidate style="max-width:400px">${inp("cur", "Current password", "password", "", 0, 'minlength="6"')}${inp("new", "New password", "password", "", 0, 'minlength="6"')}${inp("conf", "Confirm new password", "password", "", 0, 'minlength="6"')}<button class="btn btn-primary">Change password</button></form>`,
+  hist: () => {
+    const h = DB.history.filter((x) => x.uid === me.id);
+    return `<ul class="list-group mb-3">${h.map((x) => `<li class="list-group-item">${esc(x.q)} <span class="badge bg-secondary">${x.f}</span> <small class="text-muted">${x.t}</small></li>`).join("") || '<li class="list-group-item">No searches yet.</li>'}</ul><button class="btn btn-outline-danger" data-act="clearHist">Clear search history</button>`;
+  },
+  fol: () =>
+    `<div class="row g-3">${me.follows.map(find).map(card).join("") || "<p>You are not following anyone yet.</p>"}</div>`,
+  msgs: () =>
+    `<div class="list-group">${
+      threads()
+        .map(
+          ([id, n]) =>
+            `<button class="list-group-item list-group-item-action" data-act="thread" data-id="${id}"><i class="bi bi-chat"></i> ${esc(n)}</button>`,
+        )
+        .join("") || "<p>No conversations yet.</p>"
+    }</div>`,
+  info: () =>
+    `<form data-form="entity" novalidate>${fields(DEFS[me.type], mine())}<button class="btn btn-primary">Save information</button></form>`,
+  meds: () =>
+    rows(
+      mine().medicines,
+      (m) =>
+        `<td>${esc(m.name)}</td><td>${m.price} EGP</td><td>${m.avail ? "Available" : "Out of stock"}</td>`,
+      "Med",
+    ),
+  offers: () =>
+    rows(
+      mine().offers,
+      (o) =>
+        `<td>${esc(o.title)}</td><td>${esc(o.discount)}</td><td>${esc(o.until)}</td>`,
+      "Offer",
+    ),
+  act: () =>
+    `<ul class="list-group">${
+      DB.logs
+        .filter((l) => l.user === me.email)
+        .map(
+          (l) => `<li class="list-group-item">${l.t} – ${esc(l.action)}</li>`,
+        )
+        .join("") || '<li class="list-group-item">No activity yet.</li>'
+    }</ul>`,
+};
+const vDash = () => {
+  if (!me) return vLogin();
+  const tabs =
+    me.type === "customer"
+      ? [
+          ["profile", "Profile"],
+          ["pass", "Password"],
+          ["hist", "Search history"],
+          ["fol", "Following"],
+          ["msgs", "Messages"],
+        ]
+      : [
+          ["info", "Information"],
+          ...(me.type === "pharmacy"
+            ? [
+                ["meds", "Medicines"],
+                ["offers", "Offers"],
+              ]
+            : []),
+          ["msgs", "Inbox"],
+          ["pass", "Password"],
+          ["act", "Activity log"],
+        ];
+  if (!tabs.some((t) => t[0] === tab)) tab = tabs[0][0];
+  return `<div class="container py-4"><h1 class="h3">Welcome, ${esc(me.name)} <span class="badge bg-secondary">${me.type}</span></h1><ul class="nav nav-pills my-3 flex-wrap gap-1">${tabs.map(([k, l]) => `<li class="nav-item"><button class="nav-link ${k === tab ? "active" : ""}" data-act="tab" data-id="${k}">${l}</button></li>`).join("")}</ul><div class="card card-body">${PANES[tab]()}</div></div>`;
+};
+function render() {
+  $("#nav").innerHTML = nav();
+  $("#app").innerHTML = {
+    home: vHome,
+    aid: vAid,
+    list: vList,
+    detail: vDetail,
+    login: vLogin,
+    register: vReg,
+    dash: vDash,
+  }[view]();
+}
+function openForm(title, defs, vals, save) {
+  modalSave = save;
+  $("#mTitle").textContent = title;
+  $("#mBody").innerHTML =
+    `<form data-form="modal" novalidate>${fields(defs, vals)}<button class="btn btn-primary">Save</button></form>`;
+  bootstrap.Modal.getOrCreateInstance("#modal").show();
+}
+const closeM = () => bootstrap.Modal.getInstance("#modal")?.hide();
+function openChat(eid, cid) {
+  chat = { eid, cid };
+  $("#mTitle").textContent =
+    "Chat: " +
+    (me.type === "customer"
+      ? find(eid).name
+      : DB.users.find((u) => u.id === cid).name);
+  drawChat();
+  bootstrap.Modal.getOrCreateInstance("#modal").show();
+}
+function drawChat() {
+  const side = me.type === "customer" ? "c" : "b",
+    ms = DB.messages.filter((m) => m.eid === chat.eid && m.cid === chat.cid);
+  $("#mBody").innerHTML =
+    `<div class="chat" id="chatbox" aria-live="polite">${ms.map((m) => `<div class="bubble ${m.from === side ? "me" : "them"}">${esc(m.text)}<small>${m.t}</small></div>`).join("") || '<p class="text-muted">Start the conversation with a quick question or an order.</p>'}</div><form data-form="send" class="input-group mt-2" novalidate><input class="form-control" name="text" aria-label="Message" required maxlength="300" placeholder="Type a message"><button class="btn btn-primary"><i class="bi bi-send"></i> Send</button></form>`;
+  const b = $("#chatbox");
+  b.scrollTop = b.scrollHeight;
+  $("#mBody input[name=text]").focus();
+}
+const mkEnt = (type, name) => {
+  const e = {
+    id: type[0] + Date.now(),
+    cat: type,
+    name,
+    area: "Aswan, Egypt (demo/project data)",
+    phones: [],
+    hours: "Not available",
+    mapQuery: name + " Aswan Egypt",
+    source: ["User-registered demo account"],
+    lastVerified: "Not available",
+    reviews: [],
+    announcements: [],
+    img: ph(name, "#0d6efd"),
+    ...(type === "hospital"
+      ? {
+          images: [ph(name, "#0d6efd")],
+          specialties: [],
+          services: [],
+          emergency: "123",
+        }
+      : type === "pharmacy"
+        ? { medicines: [], offers: [] }
+        : { doctor: name, specialty: "General", services: [] }),
+  };
+  DB[CAT[type][1]].push(e);
+  return e;
+};
+const login = (u) => {
+  me = u;
+  tab = "";
+  log("Logged in");
+  toast("Welcome, " + u.name);
+  go("dash");
+};
+const A = {
+  details: (id) => go("detail", id),
+  follow: (id) => {
+    if (me?.type !== "customer") {
+      toast("Log in as a customer to follow.", "warning");
+      return me ? 0 : go("login");
+    }
+    const i = me.follows.indexOf(id);
+    i < 0 ? me.follows.push(id) : me.follows.splice(i, 1);
+    ok((i < 0 ? "Followed " : "Unfollowed ") + find(id).name);
+  },
+  msg: (id) => {
+    if (!me) {
+      toast("Please log in first.", "warning");
+      return go("login");
+    }
+    if (me.type !== "customer")
+      return toast("Only customers can start chats.", "warning");
+    openChat(id, me.id);
+  },
+  logout: () => {
+    log("Logged out");
+    me = null;
+    toast("Logged out");
+    go("home");
+  },
+  tab: (id) => {
+    tab = id;
+    render();
+  },
+  clearHist: () => {
+    DB.history = DB.history.filter((x) => x.uid !== me.id);
+    ok("Search history cleared");
+  },
+  thread: (id) =>
+    me.type === "customer" ? openChat(id, me.id) : openChat(me.entityId, +id),
+  addMed: () =>
+    openForm("Add medicine", MD, { avail: "yes" }, (d) => {
+      mine().medicines.push({
+        id: "m" + Date.now(),
+        name: d.name,
+        price: +d.price,
+        avail: d.avail === "yes",
+      });
+      ok("Medicine added");
+    }),
+  editMed: (id) => {
+    const m = mine().medicines.find((x) => x.id === id);
+    openForm(
+      "Edit medicine",
+      MD,
+      { ...m, avail: m.avail ? "yes" : "no" },
+      (d) => {
+        Object.assign(m, {
+          name: d.name,
+          price: +d.price,
+          avail: d.avail === "yes",
+        });
+        ok("Medicine updated");
+      },
+    );
+  },
+  delMed: (id) => {
+    if (confirm("Delete this medicine?")) {
+      mine().medicines = mine().medicines.filter((x) => x.id !== id);
+      ok("Medicine deleted");
+    }
+  },
+  addOffer: () =>
+    openForm("Add offer", OD, {}, (d) => {
+      mine().offers.push({ id: "o" + Date.now(), ...d });
+      ok("Offer added");
+    }),
+  editOffer: (id) => {
+    const o = mine().offers.find((x) => x.id === id);
+    openForm("Edit offer", OD, o, (d) => {
+      Object.assign(o, d);
+      ok("Offer updated");
+    });
+  },
+  delOffer: (id) => {
+    if (confirm("Delete this offer?")) {
+      mine().offers = mine().offers.filter((x) => x.id !== id);
+      ok("Offer deleted");
+    }
+  },
+  botToggle: () => $("#botPanel").classList.toggle("d-none"),
+  bot: (i) => {
+    $("#botLog").innerHTML =
+      `<p class="mb-0"><b>${BOT[i][0]}</b><br>${BOT[i][1]}</p>`;
+  },
+};
+const F = {
+  search: (d) => {
+    res = { q: d.q, f: d.f, list: search(d.q, d.f) };
+    if (me?.type === "customer")
+      DB.history.unshift({
+        uid: me.id,
+        q: d.q || "(all)",
+        f: d.f,
+        t: new Date().toLocaleString(),
+      });
+    log("Searched: " + d.q);
+    render();
+    $("#results").scrollIntoView();
+  },
+  login: (d) => {
+    const u = DB.users.find(
+      (x) => x.email === d.email.toLowerCase() && x.password === d.password,
+    );
+    u ? login(u) : toast("Wrong email or password.", "danger");
+  },
+  register: (d) => {
+    if (d.password !== d.conf)
+      return toast("Passwords do not match.", "danger");
+    if (DB.users.some((x) => x.email === d.email.toLowerCase()))
+      return toast("Email already registered.", "danger");
+    const u = {
+      id: Date.now(),
+      type: d.type,
+      email: d.email.toLowerCase(),
+      password: d.password,
+      name: d.name,
+      ...(d.type === "customer"
+        ? { phone: "", follows: [] }
+        : { entityId: mkEnt(d.type, d.name).id }),
+    };
+    DB.users.push(u);
+    login(u);
+  },
+  profile: (d) => {
+    me.name = d.name;
+    me.phone = d.phone;
+    ok("Profile saved");
+  },
+  pass: (d, f) => {
+    if (d.cur !== me.password)
+      return toast("Current password is wrong.", "danger");
+    if (d.new !== d.conf) return toast("New passwords do not match.", "danger");
+    me.password = d.new;
+    f.reset();
+    ok("Password changed");
+  },
+  entity: (d) => {
+    const e = mine(),
+      o = {};
+    DEFS[me.type].forEach(([k, , t, opt]) => {
+      const v = parse(t, d[k]);
+      if (
+        !(
+          opt &&
+          (k === "images" || k === "img") &&
+          (v === "" || (Array.isArray(v) && !v.length))
+        )
+      )
+        o[k] = v;
+    });
+    Object.assign(e, o);
+    me.name = e.name;
+    ok("Information saved");
+  },
+  review: (d) => {
+    const e = find(param);
+    e.reviews.push({ user: me.name, stars: +d.stars, text: d.text });
+    ok("Review added");
+  },
+  send: (d, f) => {
+    DB.messages.push({
+      cid: chat.cid,
+      eid: chat.eid,
+      from: me.type === "customer" ? "c" : "b",
+      text: d.text,
+      t: new Date().toLocaleTimeString(),
+    });
+    log("Sent message");
+    drawChat();
+  },
+  modal: (d) => {
+    modalSave(d);
+    closeM();
+  },
+};
+document.addEventListener("click", (e) => {
+  const g = e.target.closest("[data-go]");
+  if (g) {
+    e.preventDefault();
+    const [v, p] = g.dataset.go.split(":");
+    if (v === "search") {
+      go("home");
+      setTimeout(() => $("#q").focus(), 50);
+    } else go(v, p);
+    return;
+  }
+  const a = e.target.closest("[data-act]");
+  if (a) A[a.dataset.act]?.(a.dataset.id, a);
+});
+document.addEventListener("submit", (e) => {
+  const f = e.target.closest("form[data-form]");
+  if (!f) return;
+  e.preventDefault();
+  if (!f.checkValidity()) {
+    f.classList.add("was-validated");
+    return;
+  }
+  F[f.dataset.form](Object.fromEntries(new FormData(f)), f);
+});
+document.addEventListener("change", (e) => {
+  if (e.target.dataset.change === "aid") {
+    param = e.target.value;
+    render();
+    $("#aid").focus();
+  }
+});
+$("#botBody").innerHTML =
+  `<p class="small">Pick a question:</p><div class="d-grid gap-1 mb-2">${BOT.map((b, i) => `<button class="btn btn-sm btn-outline-danger text-start" data-act="bot" data-id="${i}">${b[0]}</button>`).join("")}</div><div id="botLog" aria-live="polite"></div>`;
 render();
